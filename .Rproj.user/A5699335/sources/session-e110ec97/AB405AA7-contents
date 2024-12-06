@@ -1,0 +1,102 @@
+# <--- Loading Packages and Data --->
+
+# Packages
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+
+# RData
+load("CodeChallenge2024.RData")
+
+# df, participants of interest
+ids_of_interest = read.delim("IDs.txt", col.names = "ids", colClasses = "character")
+
+# as.factor 
+id_map$new_id = as.factor(id_map$new_id)
+HAM_sleep$ID = as.factor(HAM_sleep$ID)
+
+
+
+
+
+# <--- Question 1 Data Cleaning --->
+
+### Map ID
+ids_of_interest = ids_of_interest %>% 
+  left_join(id_map, by = join_by(ids == old_id)) # ids of interest and the corresponding new ids
+
+final_df = HAM_protect %>% 
+  left_join(id_map, join_by(ID == old_id)) %>% # match old ids to new ids
+  select(-ID) %>% # remove old ids column
+  select(new_id, timepoint:ham_17_weight) %>% 
+  rename("ID" = "new_id") %>% # "new_id" renamed to "ID"
+  rbind(HAM_sleep) %>% 
+  inner_join(ids_of_interest, by = join_by(ID == new_id)) %>% # keep only participants of interest
+  select(-ids) 
+
+### Calculate HAM scores
+for (i in c(5:26)) {
+  final_df[, i] = as.numeric(final_df[, i]) # make each HAM item variable numeric
+}
+HAM_scores = final_df %>% # adding up items except 3a to 3e
+  mutate(HAM_Score = rowSums(across(ham_1_dm:ham_17_weight), na.rm = T))
+HAM_scores %>% select(ID, HAM_Score) %>% head() # first 6 rows of HAM scores
+
+### Calculate mean HAM of each participant
+HAM_scores %>% 
+  group_by(ID) %>% 
+  summarise(mean = round(mean(HAM_Score), 2)) # mean of each participant
+
+### Latest HAM
+HAM_scores %>% 
+  group_by(ID) %>% 
+  # the date of each participant's latest HAM
+  slice_max(fug_date, n = 1, with_ties = FALSE) %>% 
+  select(ID, fug_date, HAM_Score)
+
+### HAM of 1-year timepoint
+HAM_scores %>% # filter 1-year timepoints of each participant
+  filter(grepl("1_year_", timepoint) | grepl("year_1_", timepoint)) %>% 
+  group_by(ID) %>% 
+  slice_min(fug_date, with_ties = FALSE) # the dates 1 year after the initial consent
+
+
+
+# <--- Question 2 Visualization --->
+
+### Number of participants by recruitment sources
+recruitment_data %>% 
+  ggplot(aes(RecruitSource, fill = RecruitSource)) + 
+  geom_bar() +
+  coord_flip() + # flip coordinate for aesthetics
+  scale_fill_brewer(palette = "Spectral") +
+  labs(x = "Number of Participants",
+       y = "Recruitment Source") +
+  theme(axis.text.y = element_text(angle = 30, hjust = 1), 
+        # rotate the label due to limited space
+        legend.position = "none")
+
+### Number of participants by age
+recruitment_data %>% 
+  ggplot(aes(Age, fill = ..count..)) + 
+  geom_histogram(binwidth = 5) +
+  scale_x_continuous(breaks = seq(0, 100, by = 5)) +
+  scale_fill_distiller(palette = "Blues", direction = 1) + 
+  labs(x = "Age",
+       y = "Number of Participants")
+
+### Number of participants by gender
+recruitment_data %>% 
+  ggplot(aes(Gender, fill = Gender)) + 
+  geom_bar() +
+  labs(x = "Gender",
+       y = "Number of Participants")
+
+### Number of participants by group
+recruitment_data %>% 
+  ggplot(aes(Group, fill = Group)) + 
+  geom_bar() +
+  scale_fill_brewer(palette = "Spectral") +
+  labs(x = "Group",
+       y = "Number of Participants") +
+  theme(legend.position = "none")
